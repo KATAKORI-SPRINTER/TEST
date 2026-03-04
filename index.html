@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SAROMA-KO WEATHER</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;1,300&family=Share+Tech+Mono&display=swap');
+
+:root {
+  --ink:   #05080f;
+  --foam:  #4a90c4;
+  --foam2: #2a5f8a;
+  --moon:  #e8dfc0;
+  --text:  #d0ddf0;
+  --muted: rgba(200,216,240,0.38);
+  --line:  rgba(74,144,196,0.22);
+  --PX:    5px;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: var(--ink);
+  color: var(--text);
+  font-family: 'Share Tech Mono', monospace;
+  min-height: 100vh;
+  overflow-x: hidden;
+  cursor: crosshair;
+  image-rendering: pixelated;
+}
+
+/* ピクセルグリッド */
+body::after {
+  content:'';
+  position:fixed; inset:0;
+  background-image:
+    linear-gradient(rgba(13,31,60,0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(13,31,60,0.07) 1px, transparent 1px);
+  background-size: 5px 5px;
+  pointer-events:none;
+  z-index:999;
+}
+
+#bg-canvas   { position:fixed; inset:0; z-index:0; image-rendering:pixelated; }
+#ripple-canvas { position:fixed; inset:0; pointer-events:none; z-index:2; image-rendering:pixelated; }
+
+.page {
+  position:relative; z-index:10;
+  max-width:820px; margin:0 auto; padding:0 44px;
+}
+
+/* ── ヘッダー ── */
+header {
+  padding:52px 0 28px;
+  display:flex; justify-content:space-between; align-items:flex-start;
+  border-bottom:1px solid var(--line);
+  animation:reveal 1s ease both;
+}
+.site-id { font-size:10px; letter-spacing:.45em; color:var(--foam); }
+.site-coords {
+  text-align:right; font-size:10px; letter-spacing:.2em;
+  color:var(--muted); line-height:1.9;
+}
+
+/* ── ヒーロー ── */
+.hero { padding:60px 0 40px; animation:reveal 1s ease .1s both; }
+.hero-eyebrow {
+  font-size:11px; letter-spacing:.35em; color:var(--foam);
+  margin-bottom:20px; opacity:.8;
+}
+.hero-title {
+  font-family:'Cormorant Garamond',serif;
+  font-size:clamp(3.6rem,10vw,6.8rem);
+  font-weight:300; line-height:.9; color:var(--moon);
+  letter-spacing:-.02em; margin-bottom:16px;
+  text-shadow:0 0 2px var(--moon),4px 4px 0 rgba(74,144,196,.12);
+}
+.hero-title .jp {
+  display:block; font-family:'Share Tech Mono',monospace;
+  font-size:.22em; letter-spacing:.4em; color:var(--foam);
+  margin-bottom:8px; text-shadow:none; opacity:.9;
+}
+.hero-sub {
+  font-family:'Cormorant Garamond',serif; font-style:italic;
+  font-size:16px; color:var(--muted);
+  border-left:3px solid var(--foam2); padding-left:18px; line-height:1.6;
+}
+
+/* ── 更新バー ── */
+.update-bar {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:10px 0; border-bottom:1px solid var(--line);
+  font-size:10px; letter-spacing:.25em; color:var(--muted);
+  animation:reveal 1s ease .15s both;
+}
+.update-bar .live-dot {
+  display:inline-block; width:6px; height:6px;
+  background:var(--foam); margin-right:8px;
+  animation:dot-blink 2s step-end infinite;
+}
+@keyframes dot-blink { 0%,100%{opacity:1} 50%{opacity:.15} }
+
+/* ── 現在天気 ── */
+.now-section {
+  display:grid; grid-template-columns:auto 1fr; gap:0;
+  border:2px solid var(--line); margin:28px 0 12px;
+  box-shadow:4px 4px 0 rgba(74,144,196,.06);
+  background:rgba(11,17,32,.55);
+  animation:reveal 1s ease .2s both;
+}
+
+.now-main {
+  padding:32px 36px; border-right:1px solid var(--line);
+  display:flex; flex-direction:column; justify-content:center;
+}
+.now-icon { font-size:52px; margin-bottom:8px; image-rendering:pixelated; }
+.now-temp {
+  font-family:'Cormorant Garamond',serif; font-weight:300;
+  font-size:5.5rem; line-height:1; color:var(--moon);
+  text-shadow:2px 2px 0 rgba(74,144,196,.2);
+}
+.now-temp sup { font-size:1.8rem; vertical-align:super; opacity:.7; }
+.now-desc { font-size:11px; letter-spacing:.25em; color:var(--foam); margin-top:8px; }
+.now-feels { font-size:10px; color:var(--muted); margin-top:4px; letter-spacing:.15em; }
+
+.now-stats {
+  padding:28px 32px;
+  display:grid; grid-template-columns:1fr 1fr; gap:0;
+}
+.stat-cell {
+  padding:16px 12px; border-bottom:1px solid var(--line); border-right:1px solid var(--line);
+}
+.stat-cell:nth-child(even) { border-right:none; }
+.stat-cell:nth-child(n+5)  { border-bottom:none; }
+.stat-key  { font-size:9px; letter-spacing:.4em; color:var(--foam); opacity:.55; margin-bottom:6px; text-transform:uppercase; }
+.stat-val  {
+  font-family:'Cormorant Garamond',serif; font-size:1.8rem;
+  font-weight:300; color:var(--moon); line-height:1;
+}
+.stat-val small { font-family:'Share Tech Mono',monospace; font-size:.45em; opacity:.6; margin-left:2px; }
+
+/* ── 今日の予報バー ── */
+.today-section {
+  border:1px solid var(--line); margin-bottom:12px;
+  background:rgba(11,17,32,.45);
+  animation:reveal 1s ease .3s both;
+}
+.section-head {
+  padding:12px 20px; border-bottom:1px solid var(--line);
+  font-size:9px; letter-spacing:.45em; color:var(--foam); opacity:.6; text-transform:uppercase;
+  display:flex; justify-content:space-between;
+}
+.hourly-scroll {
+  display:flex; overflow-x:auto; padding:0;
+  scrollbar-width:none;
+}
+.hourly-scroll::-webkit-scrollbar { display:none; }
+.hour-cell {
+  flex:0 0 72px; padding:16px 0; text-align:center;
+  border-right:1px solid var(--line);
+  transition:background .2s;
+}
+.hour-cell:last-child { border-right:none; }
+.hour-cell:hover { background:rgba(74,144,196,.07); }
+.hour-time  { font-size:9px; color:var(--muted); letter-spacing:.15em; margin-bottom:8px; }
+.hour-icon  { font-size:20px; margin-bottom:6px; }
+.hour-temp  { font-size:13px; color:var(--moon); }
+.hour-rain  { font-size:9px; color:var(--foam); opacity:.65; margin-top:3px; }
+
+/* ── 週間予報 ── */
+.weekly-section {
+  border:1px solid var(--line); margin-bottom:12px;
+  background:rgba(11,17,32,.45);
+  animation:reveal 1s ease .4s both;
+}
+.day-row {
+  display:grid; grid-template-columns:90px 36px 1fr 60px 60px;
+  align-items:center; gap:12px;
+  padding:14px 20px; border-bottom:1px solid var(--line);
+  transition:background .2s; cursor:default;
+}
+.day-row:last-child { border-bottom:none; }
+.day-row:hover { background:rgba(74,144,196,.06); }
+.day-name { font-size:10px; letter-spacing:.25em; color:var(--muted); }
+.day-name.today { color:var(--foam); }
+.day-icon { font-size:20px; text-align:center; }
+.day-bar-wrap { position:relative; height:4px; background:rgba(74,144,196,.1); }
+.day-bar {
+  position:absolute; height:4px;
+  background:linear-gradient(90deg, var(--foam2), var(--foam));
+  box-shadow:0 0 6px rgba(74,144,196,.4);
+}
+.day-lo { font-size:11px; color:var(--muted); text-align:right; }
+.day-hi { font-size:11px; color:var(--moon); text-align:right; }
+
+/* ── 補足情報 ── */
+.extra-row {
+  display:grid; grid-template-columns:repeat(3,1fr); gap:12px;
+  margin-bottom:28px;
+  animation:reveal 1s ease .5s both;
+}
+.extra-card {
+  border:1px solid var(--line); padding:18px 20px;
+  background:rgba(11,17,32,.45);
+  box-shadow:3px 3px 0 rgba(74,144,196,.04);
+  position:relative;
+}
+.extra-card::before {
+  content:'■'; position:absolute; top:6px; right:8px;
+  font-size:6px; color:var(--foam); opacity:.3;
+}
+.extra-tag  { font-size:9px; letter-spacing:.4em; color:var(--foam); opacity:.5; margin-bottom:8px; text-transform:uppercase; }
+.extra-val  {
+  font-family:'Cormorant Garamond',serif; font-size:2rem;
+  font-weight:300; color:var(--moon); line-height:1;
+}
+.extra-val small { font-family:'Share Tech Mono',monospace; font-size:.42em; opacity:.6; }
+.extra-note { font-size:10px; color:var(--muted); margin-top:6px; letter-spacing:.1em; }
+
+/* ── エラー・ローディング ── */
+.status-box {
+  border:2px solid var(--line); padding:40px; text-align:center;
+  margin:28px 0; background:rgba(11,17,32,.5);
+}
+.loading-dots { display:inline-flex; gap:6px; margin-bottom:14px; }
+.loading-dots span {
+  width:6px; height:6px; background:var(--foam); border-radius:0;
+  animation:dot-blink 1.2s step-end infinite;
+}
+.loading-dots span:nth-child(2){animation-delay:.4s}
+.loading-dots span:nth-child(3){animation-delay:.8s}
+.status-msg { font-size:11px; letter-spacing:.25em; color:var(--muted); }
+
+/* ── フッター ── */
+footer {
+  padding:32px 0 48px; border-top:1px solid var(--line);
+  display:flex; justify-content:space-between; align-items:flex-end;
+  animation:reveal 1s ease .6s both;
+}
+.footer-l { font-size:10px; letter-spacing:.18em; color:var(--muted); line-height:2; }
+.footer-r { font-size:10px; letter-spacing:.2em; color:rgba(74,144,196,.4); text-align:right; line-height:1.9; }
+
+/* 縦書き */
+.vert-deco {
+  position:fixed; right:24px; top:50%; transform:translateY(-50%);
+  writing-mode:vertical-rl; font-size:9px; letter-spacing:.4em;
+  color:rgba(74,144,196,.16); z-index:5; pointer-events:none; user-select:none;
+}
+
+@keyframes reveal {
+  from{opacity:0;transform:translateY(10px)}
+  to  {opacity:1;transform:translateY(0)}
+}
+
+@media(max-width:640px){
+  .page{padding:0 20px;}
+  .hero-title{font-size:3.4rem;}
+  .vert-deco{display:none;}
+  .now-section{grid-template-columns:1fr;}
+  .now-main{border-right:none;border-bottom:1px solid var(--line);}
+  .extra-row{grid-template-columns:1fr 1fr;}
+  footer{flex-direction:column;gap:12px;align-items:flex-start;}
+  .day-row{grid-template-columns:70px 30px 1fr 50px 50px;gap:8px;}
+}
+
+.panel{border:1px solid var(--line);margin-bottom:12px;background:rgba(11,17,32,.45);animation:reveal 1s ease .6s both;}
+.wiki-body{padding:24px 28px;}
+.wiki-text{font-size:13px;line-height:2.2;color:rgba(200,216,240,.82);letter-spacing:.04em;}
+.panel-foot{margin-top:14px;padding-top:12px;border-top:1px solid var(--line);display:flex;justify-content:space-between;}
+.panel-foot span,.panel-foot a{font-size:9px;letter-spacing:.3em;color:rgba(74,144,196,.45);text-decoration:none;}
+.panel-foot a:hover{color:var(--foam);}
+.cgrid{display:grid;grid-template-columns:repeat(4,1fr);}
+.cc{padding:18px 16px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);transition:background .2s;}
+.cc:hover{background:rgba(74,144,196,.06);}
+.cc:nth-child(4n){border-right:none;}.cc:nth-last-child(-n+4){border-bottom:none;}
+.ck{font-size:9px;letter-spacing:.4em;color:var(--foam);opacity:.5;margin-bottom:7px;text-transform:uppercase;}
+.cv{font-family:'Cormorant Garamond',serif;font-size:1.5rem;font-weight:300;color:var(--moon);line-height:1.3;}
+.cv small{font-family:'Share Tech Mono',monospace;font-size:.42em;opacity:.6;display:block;margin-top:2px;}
+.cflag{font-size:2.2rem;}
+@media(max-width:640px){.cgrid{grid-template-columns:repeat(2,1fr);}.cc:nth-child(2n){border-right:none;}}
+
+</style>
+</head>
+<body>
+
+<canvas id="bg-canvas"></canvas>
+<canvas id="ripple-canvas"></canvas>
+<div class="vert-deco">SAROMAKO -- HOKKAIDO -- OKHOTSK SEA</div>
+
+<div class="page">
+
+  <header>
+    <div class="site-id">SAROMA-KO WEATHER</div>
+    <div class="site-coords">
+      44°07'N  143°57'E<br>
+      HOKKAIDO, JAPAN<br>
+      <span style="color:rgba(74,144,196,.5)">ALT: 0M</span>
+    </div>
+  </header>
+
+  <main>
+    <div class="hero">
+      <div class="hero-eyebrow">// REALTIME WEATHER — リアルタイム気象情報</div>
+      <h1 class="hero-title">
+        <span class="jp">[ サロマ湖 ]</span>
+        SAROMA
+      </h1>
+      <p class="hero-sub">
+        北海道・オホーツク海沿岸の湖<br>
+        Open-Meteo より気象データを取得
+      </p>
+    </div>
+
+    <div class="update-bar">
+      <span><span class="live-dot"></span>LIVE DATA</span>
+      <span id="lastUpdate">取得中...</span>
+    </div>
+
+    <!-- コンテンツはJSで描画 -->
+    <div id="weatherContent">
+      <div class="status-box">
+        <div class="loading-dots"><span></span><span></span><span></span></div>
+        <div class="status-msg">FETCHING WEATHER DATA...</div>
+      </div>
+    </div>
+
+
+    <div class="panel">
+      <div class="section-head"><span>ABOUT / サロマ湖について</span><span>SOURCE: WIKIPEDIA</span></div>
+      <div id="wikiContent"></div>
+    </div>
+    <div class="panel" style="margin-bottom:28px">
+      <div class="section-head"><span>COUNTRY / 日本の基本情報</span><span>SOURCE: REST COUNTRIES</span></div>
+      <div id="countryContent"></div>
+    </div>
+  </main>
+
+  <footer>
+    <div class="footer-l">
+      SAROMA LAKE, HOKKAIDO, JAPAN<br>
+      DATA: OPEN-METEO.COM — FREE &amp; NO API KEY<br>
+      <span style="opacity:.45">自動更新: 10分ごと</span>
+    </div>
+    <div class="footer-r">
+      44°07'22"N<br>
+      143°57'18"E<br>
+      <span style="color:rgba(74,144,196,.2)">ALT: 0M</span>
+    </div>
+  </footer>
+
+</div>
+
+<script>
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ピクセルアート背景
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const bgCanvas = document.getElementById('bg-canvas');
+const bgCtx    = bgCanvas.getContext('2d');
+const PX = 5;
+let W, H, cols, rows;
+
+function resizeBg() {
+  bgCanvas.width  = window.innerWidth;
+  bgCanvas.height = window.innerHeight;
+  W = bgCanvas.width; H = bgCanvas.height;
+  cols = Math.ceil(W/PX); rows = Math.ceil(H/PX);
+}
+resizeBg();
+window.addEventListener('resize', () => { resizeBg(); genAll(); });
+
+const C = {
+  sky1:[8,12,24], sky2:[12,20,40], horizon:[18,36,68],
+  lake1:[9,20,42], lake3:[14,32,62],
+  foam:[40,90,150], foam2:[55,120,180],
+  moon:[232,223,192], star1:[200,218,240], star2:[160,185,220], star3:[120,155,210],
+  mtn1:[7,12,26], mtn2:[9,16,34],
+};
+function rgb(c){return `rgb(${c[0]},${c[1]},${c[2]})`;}
+function pset(c,r,color){bgCtx.fillStyle=rgb(color);bgCtx.fillRect(c*PX,r*PX,PX,PX);}
+function lerp3(a,b,t){return[Math.round(a[0]+(b[0]-a[0])*t),Math.round(a[1]+(b[1]-a[1])*t),Math.round(a[2]+(b[2]-a[2])*t)];}
+
+let stars=[], mtn1=[], mtn2=[];
+const MC_F=0.73, MR_F=0.11, MR=3;
+
+function genStars(){
+  stars=[];
+  const sr=Math.floor(rows*.46);
+  for(let i=0;i<130;i++) stars.push({
+    c:Math.floor(Math.random()*cols), r:Math.floor(Math.random()*sr),
+    bright:Math.random(), phase:Math.random()*Math.PI*2, period:1.8+Math.random()*3.2
+  });
+}
+function genMtns(){
+  mtn1=[]; mtn2=[];
+  for(let c=0;c<=cols;c++){
+    const t=c/cols;
+    mtn1.push(Math.max(0,Math.floor(Math.sin(t*Math.PI*2.3+.4)*rows*.11+Math.sin(t*Math.PI*4.7+1.1)*rows*.04+Math.sin(t*Math.PI*1.1+.2)*rows*.025+rows*.07)));
+    mtn2.push(Math.max(0,Math.floor(Math.sin(t*Math.PI*3.1+2)*rows*.065+Math.sin(t*Math.PI*6.2+.7)*rows*.022+rows*.04)));
+  }
+}
+function genAll(){genStars();genMtns();}
+genAll();
+
+let animT=0;
+function drawBg(){
+  bgCtx.clearRect(0,0,W,H);
+  const hr=Math.floor(rows*.52), ws=hr;
+  const mc=Math.floor(cols*MC_F), mr2=Math.floor(rows*MR_F);
+
+  for(let r=0;r<hr;r++){bgCtx.fillStyle=rgb(lerp3(C.sky1,C.horizon,(r/hr)**2));bgCtx.fillRect(0,r*PX,W,PX);}
+
+  stars.forEach(s=>{
+    const b=0.5+0.5*Math.sin(animT/s.period+s.phase);
+    const a=(0.25+b*.75)*(s.bright*.5+.5);
+    const col=C[['star1','star2','star3'][Math.floor(s.bright*2.99)]];
+    bgCtx.fillStyle=`rgba(${col[0]},${col[1]},${col[2]},${a})`;
+    bgCtx.fillRect(s.c*PX,s.r*PX,PX,PX);
+  });
+
+  for(let dc=-MR-5;dc<=MR+5;dc++) for(let dr=-MR-5;dr<=MR+5;dr++){
+    const d=Math.sqrt(dc*dc+dr*dr);
+    if(d>MR&&d<=MR+5){bgCtx.fillStyle=`rgba(220,210,175,${(1-(d-MR)/5)*.15})`;bgCtx.fillRect((mc+dc)*PX,(mr2+dr)*PX,PX,PX);}
+  }
+  for(let dc=-MR;dc<=MR;dc++) for(let dr=-MR;dr<=MR;dr++) if(dc*dc+dr*dr<=MR*MR+.5) pset(mc+dc,mr2+dr,C.moon);
+
+  const m1b=Math.floor(rows*.43);
+  for(let c=0;c<cols;c++){const top=m1b-mtn1[c];for(let r=top;r<=hr;r++) pset(c,r,lerp3(C.mtn1,C.sky2,((r-top)/Math.max(1,hr-top))*.35));}
+  const m2b=Math.floor(rows*.49);
+  for(let c=0;c<cols;c++){const top=m2b-mtn2[c];for(let r=top;r<=hr;r++) pset(c,r,C.mtn2);}
+
+  for(let r=ws;r<rows;r++){bgCtx.fillStyle=rgb(lerp3(C.lake1,C.lake3,(r-ws)/(rows-ws)));bgCtx.fillRect(0,r*PX,W,PX);}
+
+  for(let wi=0;wi<9;wi++){
+    const wr=ws+Math.floor((wi/9)*(rows-ws)*.72)+1;
+    const sp=.55+wi*.13, fr=.07+wi*.035, am=.3+wi*.18, al=.10+(wi/9)*.18;
+    for(let c=0;c<cols;c++){
+      const off=Math.round(Math.sin(c*fr+animT*sp)*am+Math.sin(c*fr*1.8+animT*sp*.7)*am*.35);
+      const r=wr+off;
+      if(r>=ws&&r<rows){bgCtx.fillStyle=`rgba(${C.foam2[0]},${C.foam2[1]},${C.foam2[2]},${al})`;bgCtx.fillRect(c*PX,r*PX,PX,PX);}
+    }
+  }
+
+  for(let dr=1;dr<Math.floor(rows*.38);dr++){
+    const r=ws+dr; if(r>=rows)break;
+    const sc=Math.sin(dr*.45+animT*.9)*2.2;
+    const al=Math.max(0,(.52-dr*.02))*(.45+.55*Math.sin(dr*.28+animT));
+    const sp=Math.floor(dr*.28+1);
+    for(let dc=-sp;dc<=sp;dc++){
+      const col=mc+dc+Math.round(sc);
+      if(col>=0&&col<cols){bgCtx.fillStyle=`rgba(${C.moon[0]},${C.moon[1]},${C.moon[2]},${al})`;bgCtx.fillRect(col*PX,r*PX,PX,PX);}
+    }
+  }
+}
+
+let last=0;
+function loop(ts){if(ts-last>80){animT+=.07;drawBg();last=ts;}requestAnimationFrame(loop);}
+requestAnimationFrame(loop);
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ピクセル波紋
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const ripCanvas=document.getElementById('ripple-canvas');
+const ripCtx=ripCanvas.getContext('2d');
+let ripples=[];
+function resizeRip(){ripCanvas.width=window.innerWidth;ripCanvas.height=window.innerHeight;}
+resizeRip();
+window.addEventListener('resize',resizeRip);
+document.addEventListener('click',e=>{
+  ripples.push({x:Math.round(e.clientX/PX)*PX,y:Math.round(e.clientY/PX)*PX,r:0,alpha:.85});
+});
+function animRipples(){
+  ripCtx.clearRect(0,0,ripCanvas.width,ripCanvas.height);
+  ripples=ripples.filter(r=>r.alpha>.02);
+  ripples.forEach(rp=>{
+    const steps=Math.max(8,Math.floor(rp.r/PX)*4);
+    for(let i=0;i<steps;i++){
+      const a=(i/steps)*Math.PI*2;
+      ripCtx.fillStyle=`rgba(74,144,196,${rp.alpha})`;
+      ripCtx.fillRect(Math.round(Math.cos(a)*rp.r/PX)*PX+rp.x,Math.round(Math.sin(a)*rp.r/PX)*PX+rp.y,PX,PX);
+    }
+    if(rp.r>PX*3){
+      const r2=rp.r*.55, s2=Math.max(6,Math.floor(r2/PX)*4);
+      for(let i=0;i<s2;i++){
+        const a=(i/s2)*Math.PI*2;
+        ripCtx.fillStyle=`rgba(74,144,196,${rp.alpha*.35})`;
+        ripCtx.fillRect(Math.round(Math.cos(a)*r2/PX)*PX+rp.x,Math.round(Math.sin(a)*r2/PX)*PX+rp.y,PX,PX);
+      }
+    }
+    rp.r+=PX*1.3; rp.alpha-=.025;
+  });
+  requestAnimationFrame(animRipples);
+}
+animRipples();
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 天気アイコン（WMOコード → ドット絵emoji）
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function weatherIcon(code, isDay=true){
+  if(code===0)  return isDay ? '🌞' : '🌕';
+  if(code<=2)   return isDay ? '⛅' : '🌙';
+  if(code===3)  return '☁️';
+  if(code<=49)  return '🌫️';
+  if(code<=59)  return '🌦️';
+  if(code<=69)  return '🌧️';
+  if(code<=79)  return '🌨️';
+  if(code<=84)  return '🌧️';
+  if(code<=99)  return '⛈️';
+  return '🌡️';
+}
+function weatherDesc(code){
+  if(code===0)  return 'CLEAR SKY';
+  if(code===1)  return 'MAINLY CLEAR';
+  if(code===2)  return 'PARTLY CLOUDY';
+  if(code===3)  return 'OVERCAST';
+  if(code<=49)  return 'FOG';
+  if(code<=59)  return 'DRIZZLE';
+  if(code<=69)  return 'RAIN';
+  if(code<=79)  return 'SNOW';
+  if(code<=84)  return 'RAIN SHOWERS';
+  if(code<=99)  return 'THUNDERSTORM';
+  return 'UNKNOWN';
+}
+
+// 風向き
+function windDir(deg){
+  const dirs=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  return dirs[Math.round(deg/22.5)%16];
+}
+
+// 日本語曜日
+const DAYS_JA = ['日','月','火','水','木','金','土'];
+function dayLabel(dateStr, i){
+  if(i===0) return '今日';
+  if(i===1) return '明日';
+  const d = new Date(dateStr);
+  return DAYS_JA[d.getDay()] + '曜';
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Open-Meteo API 取得
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const LAT = 44.07, LON = 143.95;
+
+async function fetchWeather(){
+  const url = `https://api.open-meteo.com/v1/forecast?`
+    + `latitude=${LAT}&longitude=${LON}`
+    + `&current=temperature_2m,apparent_temperature,relative_humidity_2m,`
+    + `weather_code,wind_speed_10m,wind_direction_10m,precipitation,is_day,`
+    + `surface_pressure,uv_index`
+    + `&hourly=temperature_2m,weather_code,precipitation_probability`
+    + `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max`
+    + `&wind_speed_unit=kmh&timezone=Asia%2FTokyo&forecast_days=7`;
+
+  const res  = await fetch(url);
+  if(!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+function renderWeather(d){
+  const cur    = d.current;
+  const hourly = d.hourly;
+  const daily  = d.daily;
+
+  const isDay  = cur.is_day === 1;
+  const icon   = weatherIcon(cur.weather_code, isDay);
+  const desc   = weatherDesc(cur.weather_code);
+  const now    = new Date();
+  const nowH   = now.getHours();
+
+  // 今後24時間（現在時刻から）
+  const hStart = hourly.time.findIndex(t => new Date(t) >= now);
+  const hours  = Array.from({length:24},(_,i)=>hStart+i).filter(i=>i<hourly.time.length);
+
+  // 週間予報
+  const tempMin = Math.min(...daily.temperature_2m_min);
+  const tempMax = Math.max(...daily.temperature_2m_max);
+
+  document.getElementById('weatherContent').innerHTML = `
+
+    <!-- 現在天気 -->
+    <div class="now-section">
+      <div class="now-main">
+        <div class="now-icon">${icon}</div>
+        <div class="now-temp">${Math.round(cur.temperature_2m)}<sup>°C</sup></div>
+        <div class="now-desc">${desc}</div>
+        <div class="now-feels">体感 ${Math.round(cur.apparent_temperature)}°C</div>
+      </div>
+      <div class="now-stats">
+        <div class="stat-cell">
+          <div class="stat-key">HUMIDITY</div>
+          <div class="stat-val">${cur.relative_humidity_2m}<small>%</small></div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-key">WIND</div>
+          <div class="stat-val">${Math.round(cur.wind_speed_10m)}<small>km/h</small></div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-key">DIRECTION</div>
+          <div class="stat-val" style="font-size:1.4rem">${windDir(cur.wind_direction_10m)}<small> ${cur.wind_direction_10m}°</small></div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-key">PRESSURE</div>
+          <div class="stat-val">${Math.round(cur.surface_pressure)}<small>hPa</small></div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-key">PRECIP</div>
+          <div class="stat-val">${cur.precipitation}<small>mm</small></div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-key">UV INDEX</div>
+          <div class="stat-val">${cur.uv_index}<small> / 11+</small></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 時間ごと予報 -->
+    <div class="today-section">
+      <div class="section-head">
+        <span>HOURLY / 時間ごとの予報</span>
+        <span>24H</span>
+      </div>
+      <div class="hourly-scroll">
+        ${hours.map(i => `
+          <div class="hour-cell">
+            <div class="hour-time">${new Date(hourly.time[i]).getHours().toString().padStart(2,'0')}:00</div>
+            <div class="hour-icon">${weatherIcon(hourly.weather_code[i], true)}</div>
+            <div class="hour-temp">${Math.round(hourly.temperature_2m[i])}°</div>
+            <div class="hour-rain">${hourly.precipitation_probability[i]}%</div>
+          </div>`).join('')}
+      </div>
+    </div>
+
+    <!-- 週間予報 -->
+    <div class="weekly-section">
+      <div class="section-head">
+        <span>7-DAY FORECAST / 週間予報</span>
+        <span>LO ← ─────── → HI</span>
+      </div>
+      ${daily.time.map((date, i) => {
+        const lo = daily.temperature_2m_min[i];
+        const hi = daily.temperature_2m_max[i];
+        const loP = ((lo - tempMin) / (tempMax - tempMin)) * 100;
+        const hiP = ((hi - tempMin) / (tempMax - tempMin)) * 100;
+        return `
+        <div class="day-row">
+          <div class="day-name ${i===0?'today':''}">${dayLabel(date,i)}</div>
+          <div class="day-icon">${weatherIcon(daily.weather_code[i], true)}</div>
+          <div class="day-bar-wrap">
+            <div class="day-bar" style="left:${loP}%;width:${hiP-loP}%"></div>
+          </div>
+          <div class="day-lo">${Math.round(lo)}°</div>
+          <div class="day-hi">${Math.round(hi)}°</div>
+        </div>`;
+      }).join('')}
+    </div>
+
+    <!-- 補足情報 -->
+    <div class="extra-row">
+      <div class="extra-card">
+        <div class="extra-tag">TODAY HIGH / LOW</div>
+        <div class="extra-val">${Math.round(daily.temperature_2m_max[0])}°<small> / ${Math.round(daily.temperature_2m_min[0])}°</small></div>
+        <div class="extra-note">本日の最高 / 最低気温</div>
+      </div>
+      <div class="extra-card">
+        <div class="extra-tag">PRECIP SUM</div>
+        <div class="extra-val">${daily.precipitation_sum[0]}<small>mm</small></div>
+        <div class="extra-note">本日の降水量合計</div>
+      </div>
+      <div class="extra-card">
+        <div class="extra-tag">MAX WIND</div>
+        <div class="extra-val">${Math.round(daily.wind_speed_10m_max[0])}<small>km/h</small></div>
+        <div class="extra-note">本日の最大風速</div>
+      </div>
+    </div>
+  `;
+
+  // 更新時刻
+  document.getElementById('lastUpdate').textContent =
+    `LAST UPDATE: ${now.toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'})}`;
+}
+
+function showError(msg){
+  document.getElementById('weatherContent').innerHTML = `
+    <div class="status-box">
+      <div class="status-msg">[ERROR] ${msg}</div>
+    </div>`;
+}
+
+async function loadWeather(){
+  try {
+    const data = await fetchWeather();
+    renderWeather(data);
+  } catch(e) {
+    showError('データ取得に失敗しました。ネットワークを確認してください。');
+    console.error(e);
+  }
+}
+
+// 初回 + 10分ごとに自動更新
+loadWeather();
+setInterval(loadWeather, 10 * 60 * 1000);
+
+// Wikipedia API
+async function loadWiki(){
+  try{
+    const r=await fetch('https://ja.wikipedia.org/api/rest_v1/page/summary/%E3%82%B5%E3%83%AD%E3%83%9E%E6%B9%96');
+    const d=await r.json();
+    const url=(d.content_urls&&d.content_urls.desktop)?d.content_urls.desktop.page:'https://ja.wikipedia.org/wiki/%E3%82%B5%E3%83%AD%E3%83%9E%E6%B9%96';
+    document.getElementById('wikiContent').innerHTML=
+      '<div class="wiki-body">'
+      +'<div class="wiki-text">'+(d.extract||'--')+'</div>'
+      +'<div class="panel-foot"><span>WIKIPEDIA \u00b7 CC BY-SA</span>'
+      +'<a href="'+url+'" target="_blank" rel="noopener">READ MORE \u2192</a></div>'
+      +'</div>';
+  }catch(e){console.error(e);}
+}
+
+// Rest Countries API
+async function loadCountry(){
+  try{
+    const r=await fetch('https://restcountries.com/v3.1/alpha/jpn');
+    const c=(await r.json())[0];
+    const pop=c.population?c.population.toLocaleString('ja-JP'):'--';
+    const area=c.area?c.area.toLocaleString('ja-JP'):'--';
+    const cap=(c.capital&&c.capital[0])||'--';
+    const curs=c.currencies?Object.values(c.currencies):[];
+    const cur=curs.length?curs[0]:{name:'--',symbol:''};
+    const langs=c.languages?Object.values(c.languages):[];
+    const lang=langs.length?langs[0]:'--';
+    const tz=(c.timezones&&c.timezones[0])||'--';
+    const flag=c.flag||'&#127471;&#127477;';
+    document.getElementById('countryContent').innerHTML=
+      '<div class="cgrid">'
+      +'<div class="cc"><div class="ck">FLAG</div><div class="cflag">'+flag+'</div></div>'
+      +'<div class="cc"><div class="ck">POPULATION</div><div class="cv" style="font-size:1.1rem">'+pop+'<small>人</small></div></div>'
+      +'<div class="cc"><div class="ck">AREA</div><div class="cv" style="font-size:1.1rem">'+area+'<small>km&#178;</small></div></div>'
+      +'<div class="cc"><div class="ck">CAPITAL</div><div class="cv">'+cap+'</div></div>'
+      +'<div class="cc"><div class="ck">CURRENCY</div><div class="cv" style="font-size:1.1rem">'+cur.name+'<small>'+cur.symbol+'</small></div></div>'
+      +'<div class="cc"><div class="ck">LANGUAGE</div><div class="cv">'+lang+'</div></div>'
+      +'<div class="cc"><div class="ck">TIMEZONE</div><div class="cv" style="font-size:1.1rem">'+tz+'</div></div>'
+      +'<div class="cc"><div class="ck">REGION</div><div class="cv" style="font-size:.95rem">'+(c.subregion||c.region||'--')+'</div></div>'
+      +'</div>';
+  }catch(e){console.error(e);}
+}
+
+Promise.all([loadWiki(), loadCountry()]);
+
+// Wikipedia (preview: static data)
+document.getElementById('wikiContent').innerHTML =
+  '<div class="wiki-body">'
+  + '<div class="wiki-text">サロマ湖（サロマこ）は、北海道北東部のオホーツク海沿岸に位置する湟湖。面穉151.59 km²で、湖沼面穉11位、汚水湖としては日本最大。常呂郡佐呈町・常呂町・湯湖町にまたがる。漁業ではホタテ、カキの養殖が盛んであり、日本有数の産地。毎年6月にサロマ湖100kmウルトラマラソンが開催され、日本最大溚のウルトラマラソンとして知られる。冬には流氷が近づき、オホーツク海の雄大な冗駒を望むことができる。</div>'
+  + '<div class="panel-foot"><span>WIKIPEDIA \u00b7 CC BY-SA</span>'
+  + '<a href="https://ja.wikipedia.org/wiki/\u30b5\u30ed\u30de\u6e56" target="_blank">READ MORE \u2192</a></div>'
+  + '</div>';
+
+// Rest Countries (preview: static data)
+document.getElementById('countryContent').innerHTML =
+  '<div class="cgrid">'
+  + '<div class="cc"><div class="ck">FLAG</div><div class="cflag">&#127471;&#127477;</div></div>'
+  + '<div class="cc"><div class="ck">POPULATION</div><div class="cv" style="font-size:1.1rem">125,681,593<small>人</small></div></div>'
+  + '<div class="cc"><div class="ck">AREA</div><div class="cv" style="font-size:1.1rem">377,930<small>km&#178;</small></div></div>'
+  + '<div class="cc"><div class="ck">CAPITAL</div><div class="cv">Tokyo</div></div>'
+  + '<div class="cc"><div class="ck">CURRENCY</div><div class="cv" style="font-size:1.1rem">Japanese yen<small>&yen;</small></div></div>'
+  + '<div class="cc"><div class="ck">LANGUAGE</div><div class="cv">日本語</div></div>'
+  + '<div class="cc"><div class="ck">TIMEZONE</div><div class="cv" style="font-size:1.1rem">UTC+09:00</div></div>'
+  + '<div class="cc"><div class="ck">REGION</div><div class="cv" style="font-size:.95rem">Eastern Asia</div></div>'
+  + '</div>';
+
+</script>
+</body>
+</html>
